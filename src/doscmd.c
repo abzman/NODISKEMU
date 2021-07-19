@@ -1949,7 +1949,7 @@ static void parse_user(void) {
 
   default:
     /* start program in buffer */
-    run_loader(0x500 + 3 * (command_buffer[1] - '3'));
+    run_loader(0x500 + 3 * ((command_buffer[1]&0xf) - 3));
     break;
 
     break;
