@@ -86,6 +86,14 @@ static uint8_t mount_line(void) {
   uint16_t curpos;
   bool got_colon = false;
   uint8_t olderror = current_error;
+
+  if (swaplist.fsize == 0) {
+    /* force error if swaplist file is empty */
+    set_error(ERROR_FILE_NOT_FOUND);
+    current_error = olderror;
+    return false;
+  }
+
   current_error = ERROR_OK;
 
   /* Kill all buffers */
