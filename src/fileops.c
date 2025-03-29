@@ -1077,6 +1077,8 @@ void file_open(uint8_t secondary) {
 
   free_unopened_buffer(buf);
 
-  previous_file_path   = path;
-  previous_file_dirent = dent;
+  if (secondary <= 1) {
+    previous_file_path   = path;
+    previous_file_dirent = dent;
+  }
 }
