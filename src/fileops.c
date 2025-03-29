@@ -1059,9 +1059,6 @@ void file_open(uint8_t secondary) {
     return;
   }
 
-  previous_file_path   = path;
-  previous_file_dirent = dent;
-
   switch (mode) {
   case OPEN_MODIFY:
   case OPEN_READ:
@@ -1079,4 +1076,7 @@ void file_open(uint8_t secondary) {
   }
 
   free_unopened_buffer(buf);
+
+  previous_file_path   = path;
+  previous_file_dirent = dent;
 }
