@@ -813,7 +813,8 @@ void handle_ieee488(void) {
         ieee488_ListenActive = false;
       }
     } else if (cmd4 == IEEE_SECONDARY) {  // DATA
-      while (!ieee488_ATN());             // Wait for ATN high
+      while (!ieee488_ATN())              // Wait for ATN high
+        if (ieee488_CheckIFC()) return;   // (but don't hang on IFC)
       if (ieee488_ListenActive) {
         printf("DTA L %d\r\n", sa);
         ieee488_ListenLoop(LL_RECEIVE, sa);

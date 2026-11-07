@@ -72,7 +72,13 @@ typedef struct {
 static tick_t lcd_timeout;
 static bool lcd_timer;
 static uint16_t lcd_current_screen;
-static entry_t *ep[CONFIG_DIR_BUFFERS * ENTRIES_PER_BLOCK];
+/* Table of pointers to the directory entries, for qsort. It lives in    */
+/* the data area of CONFIG_DIR_BUFFERS linked (= continuous) buffers.    */
+/* It used to be a static array of only 26 pointers which was filled     */
+/* without bounds checking, so directories with more than 26 entries     */
+/* overwrote other variables (the P00 cache).                            */
+#define MAX_DIR_ENTRIES (CONFIG_DIR_BUFFERS * 256 / sizeof(entry_t *))
+static entry_t **ep;
 
 
 static inline uint8_t min(uint8_t a, uint8_t b) {
@@ -407,6 +413,21 @@ void menu_set_clock(void) {
 #endif
 }
 
+/* Release all buffers used by menu_browse_files(). Any argument may be NULL. */
+static void browse_free_buffers(buffer_t *buf, buffer_t *buf_tbl,
+                                buffer_t *first_buf) {
+  buffer_t *p;
+
+  if (buf != NULL)
+    free_buffer(buf);
+
+  for (p = buf_tbl; p != NULL; p = p->pvt.buffer.next)
+    p->allocated = 0;
+
+  for (p = first_buf; p != NULL; p = p->pvt.buffer.next)
+    p->allocated = 0;
+}
+
 void lcd_print_dir_entry(uint16_t i) {
   char filename[16 + 1];
 
@@ -508,15 +529,17 @@ start:
   fat_filesystem = false;
 
   // Allocate one buffer, used to read a single directory entry
-  if ((buf = alloc_system_buffer()) == NULL) return;
+  if ((buf = alloc_system_buffer()) == NULL) goto fail;
 
   // Allocate buffers with continuous data segments
   // Stores pointers to directory entries for qsort
-  if ((buf_tbl = alloc_linked_buffers(CONFIG_DIR_BUFFERS)) == NULL) return;
+  if ((buf_tbl = alloc_linked_buffers(CONFIG_DIR_BUFFERS)) == NULL) goto fail;
+  ep = (entry_t **) buf_tbl->data;
 
   // Buffers to store the actual diretory entries.
   // Whilst the directory grows, new buffers get allocated and linked
-  if ((buf_cur = alloc_system_buffer()) == NULL) return;
+  if ((buf_cur = alloc_system_buffer()) == NULL) goto fail;
+  buf_cur->pvt.buffer.next = NULL;
   first_buf = buf_cur;
 
   // Allocating buffers affects the LEDs
@@ -527,7 +550,7 @@ start:
   uart_trace(&path.dir, 0, sizeof(dir_t));
   uart_putcrlf();
   uart_flush();
-  if (opendir(&buf->pvt.dir.dh, &path)) return;
+  if (opendir(&buf->pvt.dir.dh, &path)) goto fail;
 
   for (;;) {
     if (next_match(&buf->pvt.dir.dh,
@@ -538,6 +561,8 @@ start:
                     &dent) == 0)
     {
       uint8_t e_flags = 0;
+      if (entries >= MAX_DIR_ENTRIES)
+        break;  // pointer table full, show what we have
       if (dent.opstype == OPSTYPE_FAT) {
         fat_filesystem = true;
         if (check_imageext(dent.pvt.fat.realname) != IMG_UNKNOWN)
@@ -615,8 +640,8 @@ start:
     lcd_clear();
     for (i = 0; i < LCD_LINES; i++) {
       lcd_locate(0, i);
-      int8_t y = mp - my + i;
-      if (y < 0) return; // should not happen!
+      int16_t y = mp - my + i;  // was int8_t: overflowed beyond 127 entries
+      if (y < 0) goto fail;     // should not happen!
       if (y < DIRNAV_OFFSET) {
         rom_menu_browse(y);
       } else {
@@ -701,7 +726,7 @@ start:
       parse_doscommand();
       clear_command_buffer();
       if (current_error != ERROR_OK) goto cleanup;
-      if (pos_stack < MAX_LASTPOS) {
+      if (pos_stack < MAX_LASTPOS - 1) {  /* stack_mp[pos_stack] must stay in bounds */
         stack_mp[pos_stack]   = mp;
         stack_my[pos_stack++] = my;
         printf("pos_stack set to %d\r\n", pos_stack);
@@ -711,19 +736,8 @@ start:
   }
 
 reread:
-  free_buffer(buf);
-
-  buffer_t *p = buf_tbl;
-  do {
-    p->allocated = 0;
-    p = p->pvt.buffer.next;
-  } while (p != NULL);
-
-  p = first_buf;
-  if (p != NULL) do {
-    p->allocated = 0;
-    p = p->pvt.buffer.next;
-  } while (p != NULL);
+  browse_free_buffers(buf, buf_tbl, first_buf);
+  ep = NULL;
 
   set_busy_led(false); set_dirty_led(true);
   active_buffers = save_active_buffers;
@@ -733,6 +747,13 @@ reread:
 cleanup:
   mp = NAV_ABORT;
   goto reread;
+
+fail:
+  /* Error exit: don't leak the buffers allocated so far */
+  browse_free_buffers(buf, buf_tbl, first_buf);
+  ep = NULL;
+  active_buffers = save_active_buffers;
+  update_leds();
 }
 
 #ifdef HAVE_DUAL_INTERFACE
