@@ -28,6 +28,7 @@
 #include <avr/io.h>
 #include <util/delay.h>
 #include "config.h"
+#include "uart.h"
 #include "i2c.h"
 
 #define SOFTI2C_SDA _BV(SOFTI2C_BIT_SDA)
@@ -40,6 +41,10 @@
 
 /* Set when a slave stretched the clock for too long during a transfer */
 static uint8_t i2c_bus_error;
+
+/* Cleared if the bus is unusable (see i2c_init); idea from upstream     */
+/* sd2iec commit 90f3cbe "Disable i2c if bus in invalid state".           */
+static uint8_t i2c_ready;
 
 static void set_scl(uint8_t x) {
   if (x) {
@@ -144,6 +149,9 @@ static uint8_t i2c_recv_byte(uint8_t sendack) {
 
 /* Returns 1 if there was no ACK to the address */
 uint8_t i2c_write_register(uint8_t address, uint8_t reg, uint8_t val) {
+
+  if (!i2c_ready)
+    return 1;
   i2c_bus_error = 0;
   start_condition();
   if (i2c_send_byte(address)) {
@@ -159,6 +167,9 @@ uint8_t i2c_write_register(uint8_t address, uint8_t reg, uint8_t val) {
 /* Returns 1 if there was no ACK to the address */
 uint8_t i2c_write_registers(uint8_t address, uint8_t startreg, uint8_t count, const void *data) {
   uint8_t i;
+
+  if (!i2c_ready)
+    return 1;
 
   i2c_bus_error = 0;
   start_condition();
@@ -176,6 +187,9 @@ uint8_t i2c_write_registers(uint8_t address, uint8_t startreg, uint8_t count, co
 /* Returns -1 if there was no ACK to the address, register contents otherwise */
 int16_t i2c_read_register(uint8_t address, uint8_t reg) {
   uint8_t val;
+
+  if (!i2c_ready)
+    return -1;
 
   i2c_bus_error = 0;
   start_condition();
@@ -199,6 +213,9 @@ int16_t i2c_read_register(uint8_t address, uint8_t reg) {
 /* Returns 1 if there was no ACK to the address */
 uint8_t i2c_read_registers(uint8_t address, uint8_t startreg, uint8_t count, void *data) {
   uint8_t i;
+
+  if (!i2c_ready)
+    return 1;
 
   i2c_bus_error = 0;
   start_condition();
@@ -224,6 +241,17 @@ void i2c_init(void) {
   SOFTI2C_DDR  &= (uint8_t)~(SOFTI2C_SCL|SOFTI2C_SDA);
   SOFTI2C_PORT &= (uint8_t)~(SOFTI2C_SCL|SOFTI2C_SDA);
 
+  /* Release both lines with the internal pull-ups enabled (we can't  */
+  /* rely on external pull-ups being fitted on every board revision).  */
+  /* If SCL is still held low, nothing can be done: disable I2C.       */
+  SOFTI2C_PORT |= SOFTI2C_SCL|SOFTI2C_SDA;
+  _delay_us(20);
+  if (!(SOFTI2C_PIN & SOFTI2C_SCL)) {
+    uart_puts_P(PSTR("i2c disabled (SCL low)\r\n"));
+    i2c_ready = 0;
+    return;
+  }
+
   set_sda(1);
   set_scl(1);
 
@@ -240,5 +268,14 @@ void i2c_init(void) {
   }
   start_condition();
   stop_condition();
+
+  /* Still not idle? Then the bus is broken: don't use it at all */
+  if ((SOFTI2C_PIN & (SOFTI2C_SDA|SOFTI2C_SCL)) != (SOFTI2C_SDA|SOFTI2C_SCL)) {
+    uart_puts_P(PSTR("i2c disabled (bus stuck)\r\n"));
+    i2c_ready = 0;
+    return;
+  }
+
   i2c_bus_error = 0;
+  i2c_ready = 1;
 }
