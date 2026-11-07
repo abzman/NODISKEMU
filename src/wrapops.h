@@ -32,6 +32,9 @@
 #ifndef WRAPOPS_H
 #define WRAPOPS_H
 
+/* stdio.h must be seen before the rename() macro below, otherwise a */
+/* later #include <stdio.h> breaks on its own rename() prototype.    */
+#include <stdio.h>
 #include "buffers.h"
 #include "fileops.h"
 #include "ff.h"
