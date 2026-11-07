@@ -77,6 +77,10 @@ static inline void set_clock_prescaler(uint8_t bus) {
 static inline void set_clock_prescaler(uint8_t bus) {}
 #endif
 
+/* Switch the CPU clock to match the active bus. Call this as soon as */
+/* active_bus is known so that all delays are right during start-up. */
+#define bus_set_clock() set_clock_prescaler(active_bus)
+
 static inline void bus_mainloop(void) {
   set_clock_prescaler(active_bus);
   if (active_bus == IEC)
@@ -132,5 +136,9 @@ static inline void bus_sleep(bool sleep) {
 #endif // CONFIG_HAVE_IEEE
 #endif // CONFIG_HAVE_IEC
 #endif // HAVE_DUAL_INTERFACE
+
+#ifndef bus_set_clock
+#  define bus_set_clock() do {} while (0)
+#endif
 
 #endif

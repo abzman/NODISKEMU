@@ -59,10 +59,24 @@ uint8_t device_address = CONFIG_DEFAULT_ADDR;   // Current device address
   uint8_t active_bus = IEEE488;
 #endif
 
+#if defined(__AVR__) && !defined(CONFIG_UART_DEBUG)
+/* Safety net: without a UART, stdout/stderr would stay NULL and any     */
+/* stdio call would treat the CPU register file as a FILE struct (see    */
+/* uart.h). Point them to a stream that silently discards everything.    */
+static int null_putchar(char c, FILE *stream) {
+  return 0;
+}
+static FILE null_stream = FDEV_SETUP_STREAM(null_putchar, NULL, _FDEV_SETUP_WRITE);
+#endif
+
 #if defined(__AVR__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ > 1))
 int main(void) __attribute__((OS_main));
 #endif
 int main(void) {
+#if defined(__AVR__) && !defined(CONFIG_UART_DEBUG)
+  stdout = stderr = &null_stream;
+#endif
+
   /* Early system initialisation */
   early_board_init();
   system_init_early();
@@ -97,6 +111,11 @@ int main(void) {
   disk_init();   // accesses card
   read_configuration(); // restores configuration, may change device address
 
+  /* active_bus is known now: on petSD+/cbmSD-mini the CPU must run at */
+  /* 8 MHz for IEC or 16 MHz for IEEE-488. Until this call it runs at  */
+  /* whatever the reset left it at, so all delays could be off by 2x.  */
+  bus_set_clock();
+
   filesystem_init(0);
   // FIXME: change_init();
 
@@ -114,19 +133,20 @@ int main(void) {
 
   set_busy_led(0);
 
+  bus_interface_init();
+  bus_init();
+  read_configuration();
+  late_board_init();     // initialises the LCD
+
 #if defined(HAVE_SD)
   /* card switch diagnostic aid - hold down PREV button to use */
+  /* (must come after late_board_init(), which sets up the LCD) */
   if (menu_system_enabled && get_key_press(KEY_PREV))
     board_diagnose();
 #endif
 
   if (menu_system_enabled)
     lcd_splashscreen();
-
-  bus_interface_init();
-  bus_init();
-  read_configuration();
-  late_board_init();
 
   for (;;) {
     if (menu_system_enabled)

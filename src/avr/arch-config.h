@@ -1059,7 +1059,7 @@ static inline void buttons_init(void) {
 #include "eeprom-conf.h"
 #include "menu.h"
 #include "timer.h"
-#include <stdio.h>
+#include "uart.h"   /* not <stdio.h>: printf() must be a no-op without UART */
 
 static inline void device_hw_address_init(void) {
   // left intentionally blank
@@ -1085,7 +1085,10 @@ static inline uint8_t device_hw_address(void) {
 #  define SOFTI2C_DDR           DDRC
 #  define SOFTI2C_BIT_SCL       PC0
 #  define SOFTI2C_BIT_SDA       PC1
-#  define SOFTI2C_DELAY         6
+/* F_CPU is 8 MHz, but in IEEE-488 mode the CPU runs at 16 MHz, which */
+/* halves all _delay_us() values. 12 gives >= 6 us per phase in both  */
+/* modes, within spec for the 100 kHz PCF8583 RTC on rev. 1.x boards. */
+#  define SOFTI2C_DELAY         12
 
 // Definitions for I2C PWM slave on petSD+ 2.x boards
 #  include                      "i2c-lcd-pwm-io-config.h"
@@ -1302,7 +1305,7 @@ static inline void buttons_init(void) {
 #include "eeprom-conf.h"
 #include "menu.h"
 #include "timer.h"
-#include <stdio.h>
+#include "uart.h"   /* not <stdio.h>: printf() must be a no-op without UART */
 
 static inline void device_hw_address_init(void) {
   // left intentionally blank
@@ -1328,7 +1331,7 @@ static inline uint8_t device_hw_address(void) {
 #  define SOFTI2C_DDR           DDRC
 #  define SOFTI2C_BIT_SCL       PC0
 #  define SOFTI2C_BIT_SDA       PC1
-#  define SOFTI2C_DELAY         6
+#  define SOFTI2C_DELAY         12   /* see petSD+ */
 
 // Definitions for I2C PWM slave on petSD+ 2.x boards
 #  include                      "i2c-lcd-pwm-io-config.h"

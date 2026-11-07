@@ -306,6 +306,12 @@ ISR( USI_START_VECTOR )
    // set default starting conditions for new TWI package
    overflowState = USI_SLAVE_CHECK_ADDRESS;
 
+   // Every transfer starts with the register number. Without resetting
+   // this, one interrupted transfer (e.g. the main MCU being reset) left
+   // the slave out of step for good: register numbers were taken as data
+   // and vice versa, giving random contrast/brightness/IEC-select values.
+   i2c_register = 0;
+
    // set SDA as input
    DDR_USI &= ~( 1 << PORT_USI_SDA );
 

@@ -61,7 +61,9 @@ uint8_t lcd_brightness = 255;
 
 static int lcd_putchar(char c, FILE *stream);
 static FILE lcd_stream = FDEV_SETUP_STREAM(lcd_putchar, NULL, _FDEV_SETUP_WRITE);
-static FILE *lcd_stdout;
+/* Initialised statically so lcd_printf() can never use a NULL stream, */
+/* even if it is called before lcd_init() (see uart.h for why).        */
+static FILE *lcd_stdout = &lcd_stream;
 
 
 // avr-libc requires constant delays so we're doing some macro voodoo here
@@ -194,8 +196,6 @@ void lcd_init(void) {
   lcd_write(0x0C);             // Display on, cursor off
   lcd_write(0x06);             // Automatic increment, no shift
   lcd_clear();
-
-  lcd_stdout = &lcd_stream;
 }
 
 

@@ -56,6 +56,28 @@ void uart_putcrlf(void);
 #define uart_putcrlf() do {} while(0)
 #define uart_trace(a,b,c) do {} while(0)
 
+/* Debug printf() calls must compile to nothing when there is no UART.
+ *
+ * Without this, a debug printf() ends up in avr-libc's printf() while
+ * stdout is still NULL. vfprintf() then uses address 0 as a FILE struct,
+ * which on AVR is the CPU register file: it clears r6/r7, tests a bit
+ * of r3 and - depending on whatever value r3 happened to have after
+ * power-on or after the bootloader - calls a "put" function pointer
+ * taken from r8:r9. That's a jump to a random address.
+ *
+ * This caused the petSD+ start-up hang (since 2017-11-22, when more
+ * printf()s were added to read_configuration()) and the
+ * "SAVE creates an empty file and the device resets" bug, because
+ * ieee.c calls printf() on every OPEN/LISTEN/DATA/CLOSE.
+ *
+ * stdio.h is included first so that its prototype for printf() is
+ * not mangled by the macro below.
+ */
+#ifdef __AVR__
+#  include <stdio.h>
+#  define printf(...) do {} while(0)
+#endif
+
 #endif
 
 #endif

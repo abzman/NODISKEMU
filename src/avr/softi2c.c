@@ -33,12 +33,28 @@
 #define SOFTI2C_SDA _BV(SOFTI2C_BIT_SDA)
 #define SOFTI2C_SCL _BV(SOFTI2C_BIT_SCL)
 
+/* Upper bound for clock stretching, in loop iterations of ~1us each.  */
+/* The previous code waited forever, so a single slave holding SCL low  */
+/* (e.g. a confused I2C slave after a reset) froze the whole firmware.  */
+#define SOFTI2C_STRETCH_LIMIT 5000
+
+/* Set when a slave stretched the clock for too long during a transfer */
+static uint8_t i2c_bus_error;
+
 static void set_scl(uint8_t x) {
   if (x) {
+    uint16_t limit = SOFTI2C_STRETCH_LIMIT;
+
     SOFTI2C_DDR  &= (uint8_t)~SOFTI2C_SCL;
     SOFTI2C_PORT |= SOFTI2C_SCL;
-    // Clock stretching
-    loop_until_bit_is_set(SOFTI2C_PIN, SOFTI2C_BIT_SCL);
+    // Clock stretching, with timeout
+    while (!(SOFTI2C_PIN & SOFTI2C_SCL)) {
+      if (--limit == 0) {
+        i2c_bus_error = 1;
+        break;
+      }
+      _delay_us(1);
+    }
   } else {
     SOFTI2C_DDR  |= SOFTI2C_SCL;
     SOFTI2C_PORT &= (uint8_t)~SOFTI2C_SCL;
@@ -128,6 +144,7 @@ static uint8_t i2c_recv_byte(uint8_t sendack) {
 
 /* Returns 1 if there was no ACK to the address */
 uint8_t i2c_write_register(uint8_t address, uint8_t reg, uint8_t val) {
+  i2c_bus_error = 0;
   start_condition();
   if (i2c_send_byte(address)) {
     stop_condition();
@@ -136,13 +153,14 @@ uint8_t i2c_write_register(uint8_t address, uint8_t reg, uint8_t val) {
   i2c_send_byte(reg);
   i2c_send_byte(val);
   stop_condition();
-  return 0;
+  return i2c_bus_error;
 }
 
 /* Returns 1 if there was no ACK to the address */
 uint8_t i2c_write_registers(uint8_t address, uint8_t startreg, uint8_t count, const void *data) {
   uint8_t i;
 
+  i2c_bus_error = 0;
   start_condition();
   if (i2c_send_byte(address)) {
     stop_condition();
@@ -152,13 +170,14 @@ uint8_t i2c_write_registers(uint8_t address, uint8_t startreg, uint8_t count, co
   for (i=0;i<count;i++)
     i2c_send_byte(((uint8_t *)data)[i]);
   stop_condition();
-  return 0;
+  return i2c_bus_error;
 }
 
 /* Returns -1 if there was no ACK to the address, register contents otherwise */
 int16_t i2c_read_register(uint8_t address, uint8_t reg) {
   uint8_t val;
 
+  i2c_bus_error = 0;
   start_condition();
   if (i2c_send_byte(address)) {
     stop_condition();
@@ -172,6 +191,8 @@ int16_t i2c_read_register(uint8_t address, uint8_t reg) {
   }
   val = i2c_recv_byte(0);
   stop_condition();
+  if (i2c_bus_error)
+    return -1;
   return val;
 }
 
@@ -179,6 +200,7 @@ int16_t i2c_read_register(uint8_t address, uint8_t reg) {
 uint8_t i2c_read_registers(uint8_t address, uint8_t startreg, uint8_t count, void *data) {
   uint8_t i;
 
+  i2c_bus_error = 0;
   start_condition();
   if (i2c_send_byte(address)) {
     stop_condition();
@@ -194,7 +216,7 @@ uint8_t i2c_read_registers(uint8_t address, uint8_t startreg, uint8_t count, voi
     ((uint8_t *)data)[i] = i2c_recv_byte(1);
   ((uint8_t *)data)[i] = i2c_recv_byte(0);
   stop_condition();
-  return 0;
+  return i2c_bus_error;
 }
 
 void i2c_init(void) {
@@ -204,4 +226,19 @@ void i2c_init(void) {
 
   set_sda(1);
   set_scl(1);
+
+  /* Bus recovery. The battery-backed RTC and the PWM controller on   */
+  /* petSD+ 2.x boards are not reset together with the AVR, so after  */
+  /* a reset in the middle of a transfer a slave may still be driving */
+  /* SDA low, waiting for more clocks. Clock it out (at most 9 bits), */
+  /* then generate START+STOP so every slave is back to idle.         */
+  for (uint8_t i = 0; i < 9 && !(SOFTI2C_PIN & SOFTI2C_SDA); i++) {
+    set_scl(0);
+    _delay_us(SOFTI2C_DELAY);
+    set_scl(1);
+    _delay_us(SOFTI2C_DELAY);
+  }
+  start_condition();
+  stop_condition();
+  i2c_bus_error = 0;
 }
