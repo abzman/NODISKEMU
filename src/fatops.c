@@ -238,7 +238,8 @@ void pet2asc(uint8_t *buf) {
  */
 static bool is_valid_fat_char(const uint8_t c) {
   if (c < 32 || c > 126) return false;
-  return (strchr("\"*,/\\:=?@", c) == NULL ? true : false);
+  /* < > | are rejected by FatFs as well, so they must be encoded too */
+  return (strchr("\"*,/\\:=?@<>|", c) == NULL ? true : false);
 }
 
 /**
@@ -251,8 +252,8 @@ static bool is_valid_fat_char(const uint8_t c) {
 static bool is_valid_fat_name(const uint8_t *name) {
   const uint8_t *ptr = name;
 
-  /* check the first character */
-  if (*name == ' ' || *name == '.')
+  /* check the first character (and reject empty names) */
+  if (*name == 0 || *name == ' ' || *name == '.')
     return false;
 
   /* check all characters for validity */
@@ -261,10 +262,10 @@ static bool is_valid_fat_name(const uint8_t *name) {
       return false;
   }
 
-  /* check the last character */
+  /* check the last character (FAT doesn't allow trailing spaces/dots) */
   ptr--;
 
-  if (*name == ' ' || *name == '.')
+  if (*ptr == ' ' || *ptr == '.')
     return false;
 
   return true;
