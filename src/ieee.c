@@ -229,6 +229,16 @@ static inline uint8_t ieee488_NRFD(void) { return IEEE_INPUT_NRFD & _BV(IEEE_PIN
 static inline uint8_t ieee488_DAV(void)  { return IEEE_INPUT_DAV  & _BV(IEEE_PIN_DAV);  }
 static inline uint8_t ieee488_EOI(void)  { return IEEE_INPUT_EOI  & _BV(IEEE_PIN_EOI);  }
 
+/* Maximum time to wait for the controller during the command (ATN) phase.
+ * A Commodore controller finishes a command byte within microseconds, so
+ * this only triggers if the controller is gone, e.g. the PET was switched
+ * off while the drive is powered externally (all bus lines then read low).
+ * Without it the main loop could be stuck forever, freezing buttons, LCD
+ * and card-change handling. Idea from the PETdisk MAX firmware.
+ * The data phase is deliberately left without timeout: BASIC may keep a
+ * listener addressed for a long time (e.g. CMD).                         */
+#define IEEE_CMD_TIMEOUT_TICKS  MS_TO_TICKS(250)
+
 static inline void ieee488_SetEOI(bool x) {
   // bus driver changes flow direction of EOI from transmit
   // to receive on ATN, so simulate OC output here
@@ -752,6 +762,7 @@ void handle_ieee488(void) {
   // release NRFD.
 
   for (;;) {
+    tick_t timeout;
 
     // Fetch all commands sent in the same ATN-low-cycle
 
@@ -759,10 +770,12 @@ void handle_ieee488(void) {
     ieee488_SetNRFD(1);                   // Say ready for data
     if (ieee488_TE75160 != TE_LISTEN) ieee488_DataListen();
 
+    timeout = getticks() + IEEE_CMD_TIMEOUT_TICKS;
     while (ieee488_DAV()) {               // Wait for DAV low
       if (ieee488_ATN_received ||         // new ATN cycle?
           ieee488_ATN()        ||         // ATN cycle aborted?
-          ieee488_CheckIFC())             // interface clear?
+          ieee488_CheckIFC()   ||         // interface clear?
+          time_after(getticks(), timeout))// controller gone?
       {
          // Bus Idle if we're neither listener nor talker
          if (!ieee488_ListenActive && (ieee488_TalkingDevice == 0)) {
@@ -776,12 +789,17 @@ void handle_ieee488(void) {
     ieee488_SetNRFD(0);                   // Say not ready for data
     cmd = ieee488_Data();
     ieee488_SetNDAC(1);                   // Say data accepted
+    timeout = getticks() + IEEE_CMD_TIMEOUT_TICKS;
     while (!ieee488_DAV()) {              // Wait for DAV high
       if (ieee488_ATN_received ||         // new ATN cycle?
           ieee488_ATN()        ||         // ATN cycle aborted?
           ieee488_CheckIFC())             // interface clear?
       {
          return;
+      }
+      if (time_after(getticks(), timeout)) { // controller gone?
+        ieee488_BusIdle();
+        return;
       }
     }
 
@@ -813,8 +831,14 @@ void handle_ieee488(void) {
         ieee488_ListenActive = false;
       }
     } else if (cmd4 == IEEE_SECONDARY) {  // DATA
-      while (!ieee488_ATN())              // Wait for ATN high
+      timeout = getticks() + IEEE_CMD_TIMEOUT_TICKS;
+      while (!ieee488_ATN()) {            // Wait for ATN high
         if (ieee488_CheckIFC()) return;   // (but don't hang on IFC)
+        if (time_after(getticks(), timeout)) {
+          ieee488_BusIdle();
+          return;
+        }
+      }
       if (ieee488_ListenActive) {
         printf("DTA L %d\r\n", sa);
         ieee488_ListenLoop(LL_RECEIVE, sa);
@@ -838,8 +862,14 @@ void handle_ieee488(void) {
         }
       }
     } else if (cmd4 == IEEE_OPEN) {       // OPEN
-      while (!ieee488_ATN())              // Wait for ATN high
+      timeout = getticks() + IEEE_CMD_TIMEOUT_TICKS;
+      while (!ieee488_ATN()) {            // Wait for ATN high
         if (ieee488_CheckIFC()) return;
+        if (time_after(getticks(), timeout)) {
+          ieee488_BusIdle();
+          return;
+        }
+      }
       if (ieee488_ListenActive) {
         printf("OPN %d\r\n", sa);
         open_active = true;
