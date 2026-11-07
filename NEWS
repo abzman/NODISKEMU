@@ -1,3 +1,38 @@
+2026-11-06 - 1.0.0 ALPHA1 (maintenance release after NODISKEMU went unmaintained)
+        - Bugfix: start-up hang on many petSD+ units (power-on stall with
+          the green LED on and an uninitialised LCD, since 2017-11-22).
+          Root cause: debug printf() calls with stdout == NULL made
+          vfprintf() use the AVR register file as a FILE struct and jump
+          to an address taken from r8:r9 depending on a bit in r3
+        - Bugfix: SAVE could create an empty file and reset the device
+          (same root cause: ieee.c printf()ed on every OPEN/DATA/CLOSE)
+        - Bugfix: active/dirty buffer counts overflowed into each other
+          with 32 buffers (petSD+, cbmSD-mini)
+        - Bugfix: LCD file browser overwrote RAM with more than 26
+          directory entries, leaked buffers, broke beyond 127 entries
+          and overran its position stack after 16 directory levels
+        - Bugfix: I2C waited forever for a stretched clock; now times out,
+          recovers a stuck bus at start-up and disables a broken bus
+        - Bugfix: I2C ran too fast for the PCF8583 RTC in IEEE-488 mode
+        - Bugfix: CPU clock now set as soon as the active bus is known,
+          and reset to a known value after soft resets
+        - Bugfix: FAT name check missed trailing spaces/dots, accepted
+          < > | (rejected by FatFs)
+        - Bugfix: DS3231 century bit; day-of-week when setting the clock
+          (LCD menu and T-WI) was wrong for most dates
+        - Bugfix: board diagnose screen could run before LCD init
+        - Robustness: command-phase IEEE-488 handshakes time out after
+          250 ms, so a switched-off PET can't freeze the drive
+          (idea from PETdisk MAX)
+        - PWM controller (ATtiny25, petSD+ 2.x): reset register pointer
+          on every START so one interrupted transfer can't desync it
+        - Backported upstream sd2iec fixes 2021-2026 (Ingo Korb, Martin
+          Thierer): FAT name hang, timer wrap in time_after(), D64 BAM
+          refcount and directory loop fixes, hidden-file type flags,
+          LOAD"*" after SAVE, CD/path parsing fixes, scratch/copy error
+          checks, buffer cleanup and leak fixes, M-R without length,
+          one-character command parsing, UC..UH address calculation
+
         - M2I support removed
         - Support a LCD display attached directly to the controller
         - Several bugfixes for the new IEEE-488 routines
