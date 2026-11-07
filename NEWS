@@ -33,6 +33,7 @@
           checks, buffer cleanup and leak fixes, M-R without length,
           one-character command parsing, UC..UH address calculation
 
+2015-2018 - NODISKEMU development by Nils Eilers
         - M2I support removed
         - Support a LCD display attached directly to the controller
         - Several bugfixes for the new IEEE-488 routines
