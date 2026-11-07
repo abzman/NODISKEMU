@@ -99,6 +99,12 @@ void system_init_early(void) {
 
 #ifdef CLOCK_PRESCALE
   clock_prescale_set(CLOCK_PRESCALE);
+#elif defined(IEC_SLOW_IEEE_FAST)
+  /* Start at full speed, matching the IEEE-488 default of active_bus.  */
+  /* A soft reset (system_reset() jumps to 0) from IEC mode would       */
+  /* otherwise leave the prescaler at /2 while the timer and SPI set-up */
+  /* assume 16 MHz. bus_set_clock() picks the final speed later.        */
+  clock_prescale_set(clock_div_1);
 #endif
 }
 
