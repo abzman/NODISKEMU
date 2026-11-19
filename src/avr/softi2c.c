@@ -62,6 +62,27 @@ static uint8_t wait_high(uint8_t line) {
   return 0;
 }
 
+/* Bit timing. F_CPU describes the IEC speed (8 MHz); in IEEE-488 mode  */
+/* and during early boot petSD+/cbmSD-mini run at 16 MHz, which halves  */
+/* every _delay_us(). Delay twice in that case so the bus runs at the   */
+/* intended rate in both modes - the PCF8583 RTC on petSD+ rev. 1.x     */
+/* boards is a 100 kHz part and was overclocked in IEEE-488 mode.       */
+static inline void i2c_delay(void) {
+#ifdef IEC_SLOW_IEEE_FAST
+  if (clock_prescale_get() == clock_div_1)
+    _delay_us(SOFTI2C_DELAY);
+#endif
+  _delay_us(SOFTI2C_DELAY);
+}
+
+static inline void i2c_half_delay(void) {
+#ifdef IEC_SLOW_IEEE_FAST
+  if (clock_prescale_get() == clock_div_1)
+    _delay_us(SOFTI2C_DELAY/2);
+#endif
+  _delay_us(SOFTI2C_DELAY/2);
+}
+
 static uint8_t set_scl(uint8_t x) {
   if (x) {
     SOFTI2C_DDR  &= (uint8_t)~SOFTI2C_SCL;
@@ -94,29 +115,29 @@ static void release_bus(void) {
 static uint8_t start_condition(void) {
   set_sda(1);
   /* Also provide SCL-low setup time before a repeated START. */
-  _delay_us(SOFTI2C_DELAY);
+  i2c_delay();
   uint8_t error = set_scl(1);
   if (error) return error;
   error = wait_high(SOFTI2C_SDA);
   if (error) return error;
-  _delay_us(SOFTI2C_DELAY);
+  i2c_delay();
   set_sda(0);
-  _delay_us(SOFTI2C_DELAY);
+  i2c_delay();
   set_scl(0);
   return 0;
 }
 
 static uint8_t stop_condition(void) {
   set_sda(0);
-  _delay_us(SOFTI2C_DELAY);
+  i2c_delay();
   uint8_t error = set_scl(1);
   if (error) {
     release_bus();
     return error;
   }
-  _delay_us(SOFTI2C_DELAY);
+  i2c_delay();
   set_sda(1);
-  _delay_us(SOFTI2C_DELAY);
+  i2c_delay();
   return wait_high(SOFTI2C_SDA);
 }
 
@@ -130,9 +151,9 @@ static uint8_t recover_bus(void) {
 
   for (uint8_t i = 0; i < 9; i++) {
     set_scl(0);
-    _delay_us(SOFTI2C_DELAY);
+    i2c_delay();
     if ((error = set_scl(1))) goto fail;
-    _delay_us(SOFTI2C_DELAY);
+    i2c_delay();
     if (SOFTI2C_PIN & SOFTI2C_SDA) break;
   }
   error = stop_condition();
@@ -156,21 +177,21 @@ static uint8_t i2c_send_byte(uint8_t value) {
 
   for (i=8;i!=0;i--) {
     set_scl(0);
-    _delay_us(SOFTI2C_DELAY/2);
+    i2c_half_delay();
     set_sda(value & 128);
-    _delay_us(SOFTI2C_DELAY/2);
+    i2c_half_delay();
     if ((error = set_scl(1))) return error;
-    _delay_us(SOFTI2C_DELAY);
+    i2c_delay();
     value <<= 1;
   }
   set_scl(0);
-  _delay_us(SOFTI2C_DELAY/2);
+  i2c_half_delay();
   set_sda(1);
-  _delay_us(SOFTI2C_DELAY/2);
+  i2c_half_delay();
   if ((error = set_scl(1))) return error;
-  _delay_us(SOFTI2C_DELAY/2);
+  i2c_half_delay();
   i = !!(SOFTI2C_PIN & SOFTI2C_SDA);
-  _delay_us(SOFTI2C_DELAY/2);
+  i2c_half_delay();
   set_scl(0);
 
   return i;
@@ -187,20 +208,20 @@ static uint8_t i2c_recv_byte(uint8_t sendack, uint8_t *data) {
   uint8_t value = 0;
 
   set_sda(1);
-  _delay_us(SOFTI2C_DELAY/2);
+  i2c_half_delay();
   for (i=8;i!=0;i--) {
-    _delay_us(SOFTI2C_DELAY/2);
+    i2c_half_delay();
     if ((error = set_scl(1))) return error;
-    _delay_us(SOFTI2C_DELAY/2);
+    i2c_half_delay();
     value = (value << 1) + !!(SOFTI2C_PIN & SOFTI2C_SDA);
-    _delay_us(SOFTI2C_DELAY/2);
+    i2c_half_delay();
     set_scl(0);
-    _delay_us(SOFTI2C_DELAY/2);
+    i2c_half_delay();
   }
   set_sda(!sendack);
-  _delay_us(SOFTI2C_DELAY/2);
+  i2c_half_delay();
   if ((error = set_scl(1))) return error;
-  _delay_us(SOFTI2C_DELAY);
+  i2c_delay();
   set_scl(0);
   set_sda(1);
 
