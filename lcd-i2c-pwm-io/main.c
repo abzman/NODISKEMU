@@ -32,7 +32,7 @@ void usiTwiWriteReg(uint8_t i2c_register, uint8_t value) {
    switch (i2c_register) {
       case PWM_CONTRAST:   OCR0B = value; break;     // PWM 0
       case PWM_BRIGHTNESS: OCR1B = value; break;     // PWM 1
-      case IO_IEC:         set_io(value);            // digital output
+      case IO_IEC:         set_io(value); break;     // digital output
       default:
               break; // ignore writes to non-existent registers
 
